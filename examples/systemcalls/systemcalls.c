@@ -16,7 +16,17 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    if (cmd == NULL) {
+        return false;
+    }
 
+    int ret = system(cmd);
+    if (ret == -1 || !WIFEXITED(ret) || WEXITSTATUS(ret)) {
+        // fork() or wait() failed
+        return false;
+    }
+
+    // wait() exited normally without interruption
     return true;
 }
 
@@ -47,7 +57,7 @@ bool do_exec(int count, ...)
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
+    // command[count] = command[count];
 
 /*
  * TODO:
@@ -58,9 +68,28 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
     va_end(args);
 
+    pid_t pid = fork();
+    if (pid < 0) {
+        // fork failed
+        return false;
+    }
+
+    if (pid == 0) {
+        // child process
+        execv(command[0], command);
+        // if execv() returns then there is an error
+        _exit(EXIT_FAILURE);
+    }
+
+    // parent process: wait for child to finish
+    int ret;
+    if (waitpid(pid, &ret, 0) == -1 || !WIFEXITED(ret) || WEXITSTATUS(ret)) {
+        return false;
+    }
+
+    // wait() exited normally without interruption
     return true;
 }
 
@@ -95,5 +124,42 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 
     va_end(args);
 
+    if (outputfile == NULL) {
+        return false;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        // fork failed
+        return false;
+    }
+
+    if (pid == 0) {
+        // child process
+
+        /// open outputfile for writing
+        int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+        if (fd < 0) {
+            _exit(EXIT_FAILURE);
+        }
+        // redirect stdout to outputfile
+        if (dup2(fd, STDOUT_FILENO) < 0) {
+            close(fd);
+            _exit(EXIT_FAILURE);
+        }
+        close(fd);
+
+        execv(command[0], command);
+        // if execv() returns then there is an error
+        _exit(EXIT_FAILURE);
+    }
+
+    // parent process: wait for child to finish
+    int ret;
+    if (waitpid(pid, &ret, 0) == -1 || !WIFEXITED(ret) || WEXITSTATUS(ret)) {
+        return false;
+    }
+
+    // wait() exited normally without interruption
     return true;
 }
